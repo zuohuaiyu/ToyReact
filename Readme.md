@@ -29,6 +29,11 @@
 
 ## 二、JSX 的原理和关键实现
 
+
+> 首先来了解下什么是JSX和它的解析规则：JSX就是JavaScript和XML结合的一种格式。React发明了JSX，利用HTML语法来创建虚拟DOM。当遇到"<"，JSX就当HTML解析，遇到 “{” 就当JavaScript解析。
+
+> 我们要知道JSX语法的本质并不是直接把JSX渲染到页面，而是在内部先转换成了createElement 形式，然后再去渲染的，同时JSX在进行编译成JavaScript代码的时候进行了一定的优化，所以执行效率也更高。
+
 > 使用`plugin-transform-react-jsx`来将 JSX　转换为　React 的函数调用，这里我们改为叫`creatElement()`
 
 ### 2.1 JSX 原生标签
@@ -37,18 +42,18 @@
    2. 添加 id, class, 子节点, 文本内容的转换结果
    ```js
     document.body.appendChild(
-    <div id="a" class="c">
-        <div>abc</div>
-        <div></div>
-        <div></div>
-    </div>
+        <div id="a" class="c">
+            <div>abc</div>
+            <div></div>
+            <div></div>
+        </div>
     );
    ```
    转换结果
    ```js
     document.body.appendChild(createElement("div", {
-    id: "a",
-    "class": "c"
+        id: "a",
+        "class": "c"
     }, createElement("div", null, "abc"), createElement("div", null), createElement("div", null)));
    ```
    3. tagName是第一个参数，属性是一个对象作为第二个参数，而子节点就是剩下的几个参数
@@ -71,7 +76,7 @@
 ### 2.2　JSX 自定义组件机制
 
 1. 观察当把 div 换成自定义组件后，转换结果
-```
+```js
 document.body.appendChild(createElement(Mycomponent, {
   id: "a",
   "class": "c"
@@ -80,4 +85,40 @@ document.body.appendChild(createElement(Mycomponent, {
 这时候不会把 Mycomponent 当作字符串了，所以需要一个 Mycomponent class，同时`createElement`也要做对应的变化
 2. 因为自定义的组件是没有原生的DOM操作，我们需要对这些操作进行包装
    1. 需要包装的：createElement, createTextNode
-   2. 也没有appendChild了，这里对应到 render() 中
+   2. 对于自定义组件，应该有默认行为，可以从 Component 上继承下来
+
+
+## 三、实现setState、re-render，引入`tic-tac-toe`
+
+### 3.1 之前的问题
+
+> 前面做的render存在两个问题：1. 没有数据来源，2. 数据改变后，没有很好的机制更新
+
+需要修改 `Component` 和 `Wrapper` 来支持 `state`、 `setState`，`setState`不但改变`state`值本身，同时会重新`render`，对此`setState`之后，还会在整个生命周期结束后发起重新的`render`
+
+1. 实现基于 Range 的 DOM 绘制
+2. 实现重新绘制 re-render
+3. 改变 state 和 re-render 应该合成为一句，setState
+   1. 不同点
+   2. setState 能实现对象的合并，把 OldState 和 NewState 合并
+   3. rerender 不需要手动调用
+---
+
+### 3.2 基本跑起来 tic-tac-toe
+
+- 搬运 tic-tac-toe 游戏
+  - 源码：https://codepen.io/gaearon/pen/gWWZgR?editors=0100
+  - 把 js 的部分拷贝过来放到 main.js 中。
+  - 把 css 的部分直接贴到 main.html 文件中，用 style 标签包裹。
+- 需要注意的地方：
+  1. render 的节点是 document.body ，因为 main.html 里面没加 root div （或者加上也可以）
+  ```ReactDOM.render(<Game />, document.body>```
+  2. 把 function 组件改成 class 组件（别忘了加 this)，再把 `React.Component` 改成`Component`
+- 处理 `className` 
+  - ```<button className="square" onClick={this.props.onClick}>```
+  - 在`ElementWrapper` 的 `setAttribute` 中
+    ```js
+    if(name === "className") {
+        this.root.setAttribute("class", value);
+    }
+    ```
