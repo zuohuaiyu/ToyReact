@@ -5,9 +5,11 @@ class ElementWrapper {
     this.root = document.createElement(type);
   }
   setAttribute(name, value) {
+    // 匹配 on 开头的任意字符 [\s\S] 匹配任意字符 () 作为一个组 
     if (name.match(/^on([\s\S]+)$/)) {
       // 因为加了表示匹配型的括号(), 这时候 RegExo 的属性 $1 则表示匹配的字符串
       this.root.addEventListener(
+        // 把Click转为小写
         RegExp.$1.replace(/^[\s\S]/, c => c.toLowerCase()),
         value
       );
