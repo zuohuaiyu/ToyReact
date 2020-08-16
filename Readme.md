@@ -122,3 +122,148 @@ document.body.appendChild(createElement(Mycomponent, {
         this.root.setAttribute("class", value);
     }
     ```
+
+## 四、虚拟DOM的原理和关键实现
+
+> 在React这种UI = data + template 思路下，如果不引入 VDOM 的话，我们只能全量更新它的DOM树，那么性能是不能接受的
+
+目前的 ElementWrapper 上的方法是相当于 root 真实 DOM元素的代理，需要要把代理能力去掉，去真正的创建 VDOM
+
+### 4.1 生成 vdom
+1. 为 ElementWrapper 添加 get vdom();
+    ```js
+    get vdom() {
+        return {
+            type: this.type,
+            props: this.props,
+            // 组件 children 需要转换为vdom
+            children: this.children.map((child) => child.vdom),
+        };
+    }
+    ```
+2. TextWrapper 添加 get vdom();
+    ```js
+    get vdom() {
+        return {
+            type: "#text",
+            content: this.content,
+        };
+    }
+    ```
+3. 因为 setAttribute 就是存 this.props, 而appendChild 就是存child，这就和 Component 的行为一致，所以我们让Wrapper 继承 Component，同时把ElementWrapper中的set 和 append 注释掉。
+4. Component 添加 get vdom()
+    ```js
+    get vdom() {
+        return this.render().vdom;
+    }
+    ```
+
+### 4.2 从 vdom 生成真实 DOM
+
+1. Wrapper 中的 root 可以删掉了，我们是根据 vdom 来操作的
+2. 而 get vdom() 是返回一个新对象，这样虽然是一颗干净的树，但是上面没有方法的话，是没办法重绘的。所以直接返回 this即可。
+3. 对于vdom 的children还是组件的children，应该改为对应的vdom
+    ```js
+    get vchildren() {
+        eturn this.children.map( child => child.vdom);
+    }
+    ```
+4. setAttribute 和 appendChild 做的事情放在 RENDER_TO_DOM 做
+    ```js
+    [RENDER_TO_DOM](range) {
+        range.deleteContents();
+
+        // 还原props 到 真实 dom 的 attribute
+        let root = document.createElement(this.type);
+        for(let name in this.props) {
+        let value = this.props[name];
+        if (name.match(/^on([\s\S]+)$/)) {
+            root.addEventListener(
+            RegExp.$1.replace(/^[\s\S]/, (c) => c.toLowerCase()),
+            value
+            );
+        } else {
+            if (name === "className") {
+            root.setAttribute("class", value);
+            } else {
+            root.setAttribute(name, value);
+            }
+        }
+        }
+
+        // 还原children 到真实 dom 的children
+
+        for(let child of this.children) {
+        let childRange = document.createRange();
+        childRange.setStart(root, root.childNodes.length);
+        childRange.setEnd(root, root.childNodes.length);
+        child[RENDER_TO_DOM](childRange);
+        }
+        range.insertNode(root);
+    }
+    ```
+### 4.3 vdom 比对
+
+#### 4.3.1 节点比较
+```js
+let isSameNode = (oldNode, newNode) => {
+    if(oldNode.type !== newNode.type) {
+        return false;
+    }
+    for(let name in newNode.props) {
+        if(newNode.props[name] !== oldNode.props[name]) {
+            return false;
+        }
+    }
+    if(Object.keys(oldNode.props).length > Object.keys(newNode.props).length) {
+        return false;
+    }
+    if(newNode.type === "#text") {
+        if(newNode.content !== oldNode.content) {
+            return  false; 
+        }
+    }
+    return true;
+}
+```
+
+#### 4.3.2 更新节点
+
+```js
+let update = (oldNode, newNode) => {
+    // 对比项：type，props，children
+    // #text content
+    if(!isSameNode(oldNode, newNode)) {
+        newNode[RENDER_TO_DOM](oldNode._range);
+        return;
+    }
+    newNode._range = oldNode._range;
+
+    let newChildren = newNode.vchildren;
+    let oldChildren = oldNode.vchildren;
+
+    if(!newChildren || !newChildren.length) {
+        return ;
+    }
+
+    let tailRange = oldChildren[oldChildren.length - 1]._range;
+
+    for(let i = 0; i < newChildren.length; i++) {
+        let newChild = newChildren[i];
+        let oldChild = oldChildren[i];
+        if(i < oldChildren.length) {
+            update(oldChild, newChild);
+        } else {
+            let range = document.createRange();
+            range.setStart(tailRange.endContainer,tailRange.endOffset);
+            range.setEnd(tailRange.endContainer,tailRange.endOffset);
+            newChild[RENDER_TO_DOM](range);
+            tailRange = range;
+        }
+    }
+}
+
+let vdom = this.vdom;
+update(this._vdom, vdom);
+this._vdom = vdom;
+```
